@@ -40,4 +40,30 @@ class Agent:
                 pyautogui.keyUp(key)
 
             else:
-                print(f"Comando no reconocido: {comand}")
+                print(f"Movimiento no reconocido: {comand}")
+
+    def start(self):
+        p_processing = multiprocessing.Process(
+            target=self.percept, args=(self.queue_perceptions,)
+        )
+        p_computing = multiprocessing.Process(
+            target=self.compute, args=(self.queue_perceptions, self.queue_actions)
+        )
+        p_acting = multiprocessing.Process(
+            target=self.action, args=(self.queue_actions,)
+        )
+
+        p_processing.start()
+        p_computing.start()
+        p_acting.start()
+
+        try:
+            p_acting.start()
+            p_computing.start()
+            p_acting.start()
+
+        except KeyboardInterrupt:
+            self.queue_actions.put("^")
+
+            p_computing.terminate()
+            p_computing.terminate()
