@@ -58,12 +58,13 @@ class Agent:
         p_acting.start()
 
         try:
-            p_acting.start()
-            p_computing.start()
-            p_acting.start()
+            p_acting.join()
+            p_computing.join()
+            p_acting.join()
 
         except KeyboardInterrupt:
             self.queue_actions.put("^")
 
             p_computing.terminate()
-            p_computing.terminate()
+            p_processing.terminate()
+            p_acting.join()
