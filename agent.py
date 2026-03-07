@@ -1,6 +1,21 @@
 import numpy as np
 import time
 import pyautogui
+from dataclasses import dataclass, field
+from typing import List
+
+
+# INFO: Estructura usada para la comunicacion entre los niveles del arbol
+# Usamos  slots=True para hacerla mas rapida que un diccionario
+@dataclass(slots=True)
+class Move:
+    board: np.ndarray
+    cleared_lines: int
+    actions: List[str] = field(default_factory=list)
+    score: float = float("-inf")
+
+    def __lt__(self, other):
+        return self.score < other.score
 
 
 class Agent:
@@ -121,3 +136,64 @@ class Agent:
 
     def _count_blocks_in_well(self, board):
         return np.sum(board[:, self.well_column])
+
+    # INFO: Metodos para alcanzar el mejor movimiento.
+
+    def get_best_move(self, incoming_queue, current_board, max_depth=3):
+        best_score = float("-inf")
+        best_move = None
+
+        if not incoming_queue:
+            return None
+
+        current_piece = incoming_queue[0]
+        possible_moves = self._generate_all_moves(current_board, current_piece)
+
+        for move in possible_moves:
+            score = self._dfs_search(
+                board=move.board,
+                incoming_queue=incoming_queue[1:],
+                depth=max_depth - 1,
+                # TODO: Arregalar el tetris fantasma, si limpia 4 lineas en diferentes niveles, cotara como tetris cuando no lo es.
+                accumulated_lines=move.cleared_lines,
+            )
+
+            if score > best_score:
+                best_score = score
+                best_move = move
+
+        return best_move
+
+    def _dfs_search(self, board, incoming_queue, depth, accumulated_lines) -> float:
+        if depth == 0 or not incoming_queue:
+            return self.evaluate_move(board, accumulated_lines)
+
+        current_piece = incoming_queue[0]
+        possible_moves = self._generate_all_moves(board, current_piece)
+
+        if not possible_moves:
+            return float("-inf")
+
+        best_score_in_branch = float("-inf")
+
+        for move in possible_moves:
+            total_lines = accumulated_lines + move.cleared_lines
+
+            score = self._dfs_search(
+                board=move.board,
+                incoming_queue=incoming_queue[1:],
+                depth=depth - 1,
+                accumulated_lines=total_lines,
+            )
+
+            if score > best_score_in_branch:
+                best_score_in_branch = score
+
+        return best_score_in_branch
+
+    # TODO: Crear la funcion
+    def _generate_all_moves(self, board, piece_name) -> list[Move]:
+        """
+        Funcion que pide una pieza y el tablero y devolver una lista de Move
+        """
+        return []
