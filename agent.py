@@ -1,12 +1,13 @@
 import multiprocessing
+from typing import Sequence
 import pyautogui
 import time
 import numpy as np
 
 
 class Agent:
-    def __init__(self):
-        self.coordinates_to_check = [
+    COORDINATES = np.array(
+        [
             [
                 (701, 1234),
                 (701, 1235),
@@ -47,8 +48,22 @@ class Agent:
                 (284, 1238),
                 (284, 1239),
             ],
-            [(678, 266), (678, 266), (678, 266), (678, 266), (678, 266), (678, 266)],
         ]
+    )
+
+    COLOR_RANGES = {
+        "T": ((128, 218), (63, 103), (128, 215)),
+        "Z": ((144, 240), (52, 97), (59, 111)),
+        "S": ((100, 186), (130, 237), (59, 103)),
+        "L": ((141, 240), (89, 150), (51, 104)),
+        "J": ((77, 121), (63, 103), (136, 226)),
+        "I": ((51, 98), (144, 229), (111, 178)),
+        "O": ((142, 230), (124, 202), (51, 98)),
+    }
+
+    def __init__(self):
+        self.hold = None
+        self.next_blocks_attr = [None, None, None, None, None]
 
         self.tablero = [[0 for _ in range(10)] for _ in range(20)]
 
@@ -121,39 +136,26 @@ class Agent:
             else:
                 print(f"Movimiento no reconocido: {comand}")
 
-    def next_blocks(self, screenshot: np.ndarray) -> list:
-        next_block1 = self.most_frequent(self.possible_colors(screenshot, 0))
-        next_block2 = self.most_frequent(self.possible_colors(screenshot, 1))
-        next_block3 = self.most_frequent(self.possible_colors(screenshot, 2))
-        next_block4 = self.most_frequent(self.possible_colors(screenshot, 3))
-        next_block5 = self.most_frequent(self.possible_colors(screenshot, 4))
-        hold = self.most_frequent(self.possible_colors(screenshot, 5))
-        return [next_block1, next_block2, next_block3, next_block4, next_block5, hold]
+    def next_blocks(self, screenshot: np.typing.NDArray[np.uint8]) -> list:
+        return [
+            self.most_frequent(self.possible_colors(screenshot, i)) for i in range(0, 5)
+        ]
 
-    def possible_colors(self, screenshot: np.ndarray, index: int) -> list:
-        result = []
-        for coordinate_tuple in self.coordinates_to_check[index]:
-            result.append(
-                self.color(screenshot[coordinate_tuple[0]][coordinate_tuple[1]])
-            )
-        return result
+    def possible_colors(
+        self, screenshot: np.typing.NDArray[np.uint8], index: int
+    ) -> list:
+        return [self.color(screenshot[r, c]) for r, c in self.COORDINATES[index]]
 
-    def color(self, rgb: tuple) -> str | None:
-        if 128 <= rgb[0] <= 218 and 63 <= rgb[1] <= 103 and 128 <= rgb[2] <= 215:
-            return "T"
-        elif 144 <= rgb[0] <= 240 and 52 <= rgb[1] <= 97 and 59 <= rgb[2] <= 111:
-            return "Z"
-        elif 100 <= rgb[0] <= 186 and 130 <= rgb[1] <= 237 and 59 <= rgb[2] <= 103:
-            return "S"
-        elif 141 <= rgb[0] <= 240 and 89 <= rgb[1] <= 150 and 51 <= rgb[2] <= 104:
-            return "L"
-        elif 77 <= rgb[0] <= 121 and 63 <= rgb[1] <= 103 and 136 <= rgb[2] <= 226:
-            return "J"
-        elif 51 <= rgb[0] <= 98 and 144 <= rgb[1] <= 229 and 111 <= rgb[2] <= 178:
-            return "I"
-        elif 142 <= rgb[0] <= 230 and 124 <= rgb[1] <= 202 and 51 <= rgb[2] <= 98:
-            return "O"
-        return "None"
+    def color(self, rgb: np.typing.NDArray[np.uint8] | Sequence[int]) -> str | None:
+        r, g, b = rgb
+        for name, (
+            (r_min, r_max),
+            (g_min, g_max),
+            (b_min, b_max),
+        ) in self.COLOR_RANGES.items():
+            if r_min <= r <= r_max and g_min <= g <= g_max and b_min <= b <= b_max:
+                return name
+        return None
 
     def most_frequent(self, lista: list) -> str:
         return max(set(lista), key=lista.count)
