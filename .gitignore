@@ -1,0 +1,11 @@
+# Entornos virtuales
+env/
+venv/
+.env/
+bin/
+lib/
+share/
+Include/
+
+
+prueba.py
