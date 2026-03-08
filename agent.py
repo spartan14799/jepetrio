@@ -318,3 +318,10 @@ class Agent:
             return True
 
         return False
+
+    def _get_drop_position(self, board, piece_matrix, offset_x):
+        curret_y = -2
+        while not self._check_collision(board, piece_matrix, offset_x, curret_y):
+            curret_y += 1
+
+        return curret_y - 1
