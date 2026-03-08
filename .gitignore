@@ -10,4 +10,4 @@ Include/
 
 prueba.py
 .venv/
-__pychache__/
+**/__pychache__/
