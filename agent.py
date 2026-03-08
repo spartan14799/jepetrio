@@ -296,3 +296,25 @@ class Agent:
         Funcion que pide una pieza y el tablero y devolver una lista de Move
         """
         return []
+
+    def _check_collision(self, board, piece_matrix, offset_x, offset_y):
+        block_y, block_x = np.where(piece_matrix == 1)
+
+        board_y = block_y + offset_y
+        board_x = block_x + offset_x
+
+        if (
+            np.any(board_x < 0)
+            or np.any(board_x >= self.cols)
+            or np.any(board_y >= self.rows)
+        ):
+            return True
+
+        valids = board_y >= 0
+        board_y_valids = board_y[valids]
+        board_x_valids = board_x[valids]
+
+        if np.any(board[board_y_valids, board_x_valids] == 1):
+            return True
+
+        return False
