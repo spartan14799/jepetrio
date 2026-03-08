@@ -1,4 +1,5 @@
 import multiprocessing
+import re
 from typing import Sequence, List
 from dataclasses import dataclass, field
 import pyautogui
@@ -325,3 +326,19 @@ class Agent:
             curret_y += 1
 
         return curret_y - 1
+
+    def _place_piece(self, board, piece_matrix, offset_x, offset_y):
+        new_board = (
+            board.copy()
+        )  # INFO: para evitar que se sobreescriba sobre el tablero
+        block_y, block_x = np.where(piece_matrix == 1)
+
+        board_y = block_y + offset_y
+        board_x = block_x + offset_x
+
+        valids = block_y >= 0
+        board_y_valids = board_y[valids]
+        board_x_valids = board_x[valids]
+
+        new_board[board_y_valids, board_x_valids] = 1
+        return new_board
