@@ -96,7 +96,7 @@ class Agent:
         self.cols = 10
 
         # Representación matricial (Bounding boxes de 4x4, 3x3 y 2x2)
-        self.piezas_mapeo = {
+        self.maping_pieces = {
             "I": [
                 np.array([[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
                 np.array([[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0]]),
@@ -291,12 +291,46 @@ class Agent:
 
         return best_score_in_branch
 
-    # TODO: Crear la funcion
     def _generate_all_moves(self, board, piece_name) -> list[Move]:
-        """
-        Funcion que pide una pieza y el tablero y devolver una lista de Move
-        """
-        return []
+        possible_moves = []
+
+        rotations = self.maping_pieces[piece_name]
+
+        for rot_idx, piece_matrix in enumerate(rotations):
+            _, blocks_x = np.where(piece_matrix == 1)
+
+            for x in range(-3, self.cols + 1):
+                board_x = blocks_x + x
+
+                if np.any(board_x < 0) or np.any(board_x >= self.cols):
+                    continue
+
+                drop_y = self._get_drop_position(board, piece_matrix, x)
+
+                new_board = self._place_piece(board, piece_matrix, x, drop_y)
+
+                final_board, cleared_lines = self._clear_lines(new_board)
+
+                # Revisar bien
+                spawn_col = 3
+                actions = []
+                for _ in range(rot_idx):
+                    actions.append("rotate_cw")
+
+                if x < spawn_col:
+                    actions.extend(["left"] * (spawn_col - x))
+
+                elif x > spawn_col:
+                    actions.extend(["right"] * (x - spawn_col))
+
+                actions.append("hard_drop")
+                move = Move(
+                    board=final_board, cleared_lines=cleared_lines, actions=actions
+                )
+
+                possible_moves.append(move)
+
+        return possible_moves
 
     def _check_collision(self, board, piece_matrix, offset_x, offset_y):
         block_y, block_x = np.where(piece_matrix == 1)
