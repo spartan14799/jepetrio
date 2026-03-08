@@ -1,4 +1,5 @@
 import multiprocessing
+import re
 from typing import Sequence, List
 from dataclasses import dataclass, field
 import pyautogui
@@ -95,7 +96,7 @@ class Agent:
         self.cols = 10
 
         # Representación matricial (Bounding boxes de 4x4, 3x3 y 2x2)
-        self.piezas_mapeo = {
+        self.maping_pieces = {
             "I": [
                 np.array([[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
                 np.array([[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0]]),
@@ -290,9 +291,101 @@ class Agent:
 
         return best_score_in_branch
 
-    # TODO: Crear la funcion
     def _generate_all_moves(self, board, piece_name) -> list[Move]:
-        """
-        Funcion que pide una pieza y el tablero y devolver una lista de Move
-        """
-        return []
+        possible_moves = []
+
+        rotations = self.maping_pieces[piece_name]
+
+        for rot_idx, piece_matrix in enumerate(rotations):
+            _, blocks_x = np.where(piece_matrix == 1)
+
+            for x in range(-3, self.cols + 1):
+                board_x = blocks_x + x
+
+                if np.any(board_x < 0) or np.any(board_x >= self.cols):
+                    continue
+
+                drop_y = self._get_drop_position(board, piece_matrix, x)
+
+                new_board = self._place_piece(board, piece_matrix, x, drop_y)
+
+                final_board, cleared_lines = self._clear_lines(new_board)
+
+                # Revisar bien
+                spawn_col = 3
+                actions = []
+                for _ in range(rot_idx):
+                    actions.append("rotate_cw")
+
+                if x < spawn_col:
+                    actions.extend(["left"] * (spawn_col - x))
+
+                elif x > spawn_col:
+                    actions.extend(["right"] * (x - spawn_col))
+
+                actions.append("hard_drop")
+                move = Move(
+                    board=final_board, cleared_lines=cleared_lines, actions=actions
+                )
+
+                possible_moves.append(move)
+
+        return possible_moves
+
+    def _check_collision(self, board, piece_matrix, offset_x, offset_y):
+        block_y, block_x = np.where(piece_matrix == 1)
+
+        board_y = block_y + offset_y
+        board_x = block_x + offset_x
+
+        if (
+            np.any(board_x < 0)
+            or np.any(board_x >= self.cols)
+            or np.any(board_y >= self.rows)
+        ):
+            return True
+
+        valids = board_y >= 0
+        board_y_valids = board_y[valids]
+        board_x_valids = board_x[valids]
+
+        if np.any(board[board_y_valids, board_x_valids] == 1):
+            return True
+
+        return False
+
+    def _get_drop_position(self, board, piece_matrix, offset_x):
+        curret_y = -2
+        while not self._check_collision(board, piece_matrix, offset_x, curret_y):
+            curret_y += 1
+
+        return curret_y - 1
+
+    def _place_piece(self, board, piece_matrix, offset_x, offset_y):
+        new_board = (
+            board.copy()
+        )  # INFO: para evitar que se sobreescriba sobre el tablero
+        block_y, block_x = np.where(piece_matrix == 1)
+
+        board_y = block_y + offset_y
+        board_x = block_x + offset_x
+
+        valids = board_y >= 0
+        board_y_valids = board_y[valids]
+        board_x_valids = board_x[valids]
+
+        new_board[board_y_valids, board_x_valids] = 1
+        return new_board
+
+    def _clear_lines(self, board):
+        filled_rows = np.all(board == 1, axis=1)
+        num_row_cleared = np.sum(filled_rows)
+
+        if num_row_cleared == 0:
+            return board, 0
+
+        remaining_rows = board[~filled_rows]
+        cleared_rows = np.zeros((num_row_cleared, self.cols), dtype=int)
+        new_board = np.vstack((cleared_rows, remaining_rows))
+
+        return new_board, num_row_cleared
