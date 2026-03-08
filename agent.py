@@ -370,7 +370,7 @@ class Agent:
         board_y = block_y + offset_y
         board_x = block_x + offset_x
 
-        valids = block_y >= 0
+        valids = board_y >= 0
         board_y_valids = board_y[valids]
         board_x_valids = board_x[valids]
 
