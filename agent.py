@@ -342,3 +342,16 @@ class Agent:
 
         new_board[board_y_valids, board_x_valids] = 1
         return new_board
+
+    def _clear_lines(self, board):
+        filled_rows = np.all(board == 1, axis=1)
+        num_row_cleared = np.sum(filled_rows)
+
+        if num_row_cleared == 0:
+            return board, 0
+
+        remaining_rows = board[~filled_rows]
+        cleared_rows = np.zeros((num_row_cleared, self.cols), dtype=int)
+        new_board = np.vstack((cleared_rows, remaining_rows))
+
+        return new_board, num_row_cleared
