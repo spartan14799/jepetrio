@@ -195,6 +195,8 @@ class Agent:
         )
         p_acting = multiprocessing.Process(
             target=self.action, args=(self.queue_actions,)
+        )
+        
     def evaluate_move(self, board, cleared_lines):
         holes = self._count_holes(board)
         bumpiness = self._calculate_bumpiness(board)
