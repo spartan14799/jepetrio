@@ -157,7 +157,7 @@ class Agent:
             if comand in keys:
                 key = keys[comand]
                 pyautogui.keyDown(key)
-                time.sleep(0.02)
+                sleep(0.02)
                 pyautogui.keyUp(key)
 
             else:
