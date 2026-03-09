@@ -15,6 +15,7 @@ class Move:
     cleared_lines: int
     actions: List[str] = field(default_factory=list)
     score: float = float("-inf")
+    held_piece: str = ""
 
     def __lt__(self, other):
         return self.score < other.score
@@ -191,7 +192,7 @@ class Agent:
     def most_frequent(self, lista: list) -> str:
         return max(set(lista), key=lista.count)
 
-    def evaluate_move(self, board, cleared_lines):
+    def evaluate_move(self, board, cleared_lines, held_piece):
         holes = self._count_holes(board)
         bumpiness = self._calculate_bumpiness(board)
         blocks_in_well = self._count_blocks_in_well(board)
@@ -206,6 +207,13 @@ class Agent:
             + (self.weights["incomplete_clear"] * incomplete_clear)
             + (self.weights["tetris"] * is_tetris)
         )
+        if is_tetris == 1:
+            score += 1000.0
+
+        if held_piece == "I":
+            score += 500.0
+
+        return score
 
         return score
 
@@ -226,9 +234,11 @@ class Agent:
     def _count_blocks_in_well(self, board):
         return np.sum(board[:, self.well_column])
 
-    # INFO: Metodos para alcanzar el mejor movimiento.
+    # INFO: Metodos para alcanzar el mejor movimiento sin el hold.
 
-    def get_best_move(self, incoming_queue, current_board, max_depth=3):
+    def get_best_move(
+        self, incoming_queue, current_board, max_depth=3, current_held_piece=""
+    ):
         best_score = float("-inf")
         best_move = None
 
@@ -236,14 +246,22 @@ class Agent:
             return None
 
         current_piece = incoming_queue[0]
-        possible_moves = self._generate_all_moves(current_board, current_piece)
+
+        possible_moves = self._generate_moves_with_hold(
+            current_board, current_piece, incoming_queue[1:], current_held_piece
+        )
 
         for move in possible_moves:
+            queue_for_future = incoming_queue[1:]
+            if move.actions and move.actions[0] == "c" and current_held_piece == "":
+                queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
+
             score = self._dfs_search(
                 board=move.board,
-                incoming_queue=incoming_queue[1:],
+                incoming_queue=queue_for_future,
                 depth=max_depth - 1,
                 accumulated_lines=move.cleared_lines,
+                current_held_piece=move.held_piece,
             )
 
             if score > best_score:
@@ -253,12 +271,17 @@ class Agent:
 
         return best_move
 
-    def _dfs_search(self, board, incoming_queue, depth, accumulated_lines) -> float:
+    def _dfs_search(
+        self, board, incoming_queue, depth, accumulated_lines, current_held_piece
+    ) -> float:
         if depth == 0 or not incoming_queue:
-            return self.evaluate_move(board, accumulated_lines)
+            return self.evaluate_move(board, accumulated_lines, current_held_piece)
 
         current_piece = incoming_queue[0]
-        possible_moves = self._generate_all_moves(board, current_piece)
+
+        possible_moves = self._generate_moves_with_hold(
+            board, current_piece, incoming_queue[1:], current_held_piece
+        )
 
         if not possible_moves:
             return float("-inf")
@@ -268,11 +291,16 @@ class Agent:
         for move in possible_moves:
             total_lines = accumulated_lines + move.cleared_lines
 
+            queue_for_future = incoming_queue[1:]
+            if move.actions and move.actions[0] == "c" and current_held_piece == "":
+                queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
+
             score = self._dfs_search(
                 board=move.board,
-                incoming_queue=incoming_queue[1:],
+                incoming_queue=queue_for_future,
                 depth=depth - 1,
                 accumulated_lines=total_lines,
+                current_held_piece=move.held_piece,
             )
 
             if score > best_score_in_branch:
@@ -390,18 +418,27 @@ class Agent:
     def __setstate__(self, estado):
         self.__dict__.update(estado)
 
-    def _evaluate_single_branch(self, move, incoming_queue, max_depth):
+    def _evaluate_single_branch(
+        self, move, incoming_queue, max_depth, initial_held_piece
+    ):
+        queue_for_future = incoming_queue[1:]
+
+        if move.actions and move.actions[0] == "c" and initial_held_piece == "":
+            queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
+
         score = self._dfs_search(
             board=move.board,
-            incoming_queue=incoming_queue[1:],
+            incoming_queue=queue_for_future,
             depth=max_depth - 1,
             accumulated_lines=move.cleared_lines,
+            current_held_piece=move.held_piece,
         )
         move.score = score
         return move
 
-    def get_best_move_parallel(self, incoming_queue, current_board, max_depth=3):
-        """Metodo paralelo para encontrar el mejor camino"""
+    def get_best_move_parallel(
+        self, incoming_queue, current_board, max_depth=3, current_held_piece=""
+    ):
         best_score = float("-inf")
         best_move = None
 
@@ -409,13 +446,20 @@ class Agent:
             return None
 
         current_piece = incoming_queue[0]
-        possible_moves = self._generate_all_moves(current_board, current_piece)
+
+        possible_moves = self._generate_moves_with_hold(
+            current_board, current_piece, incoming_queue[1:], current_held_piece
+        )
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = []
             for move in possible_moves:
                 future = executor.submit(
-                    self._evaluate_single_branch, move, incoming_queue, max_depth
+                    self._evaluate_single_branch,
+                    move,
+                    incoming_queue,
+                    max_depth,
+                    current_held_piece,
                 )
                 futures.append(future)
 
@@ -425,4 +469,35 @@ class Agent:
                 if evaluated_move.score > best_score:
                     best_score = evaluated_move.score
                     best_move = evaluated_move
+
         return best_move
+
+    # INFO: Metodos para encontrar movimientos usando el hold
+    #
+    def _generate_moves_with_hold(
+        self, current_board, current_piece, incoming_queue, current_held_piece
+    ):
+        """Genera movimientos normales Y movimientos usando el Hold."""
+        all_moves = []
+
+        normal_moves = self._generate_all_moves(current_board, current_piece)
+        for move in normal_moves:
+            move.held_piece = current_held_piece
+            all_moves.append(move)
+
+        if current_held_piece == "":
+            if not incoming_queue:
+                return all_moves
+            piece_to_play = incoming_queue[0]
+            new_held = current_piece
+        else:
+            piece_to_play = current_held_piece
+            new_held = current_piece
+
+        moves_con_hold = self._generate_all_moves(current_board, piece_to_play)
+        for move in moves_con_hold:
+            move.actions = ["c"] + move.actions
+            move.held_piece = new_held
+            all_moves.append(move)
+
+        return all_moves
