@@ -1,0 +1,14 @@
+====================================
+COMPARACION: ORIGINAL VS OPTIMIZADO
+====================================
+
+-> Evaluando: Agente Original (ProcessPool / depth=2 / sin penalizar altura) (Prueba de 15 piezas)
+   > Tiempo de proceso : 12.52 segundos
+   > Velocidad         : 1.20 PPS (Piezas por segundo)
+   > Lineas resueltas  : 2
+
+-> Evaluando: Agente Optimizado (SingleThread / depth=1 / pesos Dellacherie) (Prueba de 15 piezas)
+   > Tiempo de proceso : 0.36 segundos
+   > Velocidad         : 42.21 PPS (Piezas por segundo)
+   > Lineas resueltas  : 4
+

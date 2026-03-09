@@ -86,12 +86,11 @@ class Agent:
             weights
             if weights
             else {
-                "holes": -35.0,
+                "holes": -10.0,
                 "bumpiness": -2.0,
-                "aggregate_height": -5.0,
-                "block_in_well": -10.0,
-                "incomplete_clear": 5.0,  # Any clear is good to survive!
-                "tetris": 50.0,
+                "block_in_well": -8.0,
+                "incomplete_clear": -5.0,
+                "tetris": 15.0,
             }
         )
 
@@ -133,14 +132,7 @@ class Agent:
                 np.array([[0, 0, 1], [0, 1, 1], [0, 1, 0]]),
             ],
         }
-         # OPTI: Precalcular coordenadas de bloques para cada rotación
-        self.piece_coords = {}
-        for piece, rotations in self.maping_pieces.items():
-            coords_list = []
-            for matrix in rotations:
-                y, x = np.where(matrix == 1)
-                coords_list.append((y, x))  # (filas, columnas) relativas a la pieza
-            self.piece_coords[piece] = coords_list
+
         self.queue_perceptions = multiprocessing.Queue()
         self.queue_actions = multiprocessing.Queue()
 
@@ -199,20 +191,22 @@ class Agent:
         holes = self._count_holes(board)
         bumpiness = self._calculate_bumpiness(board)
         blocks_in_well = self._count_blocks_in_well(board)
-        aggregate_height = self._calculate_aggregate_height(board)
 
-        lines_weight = cleared_lines * 15.0
-        
+        is_tetris = 1 if cleared_lines >= 4 else 0
+        incomplete_clear = cleared_lines if 0 < cleared_lines < 4 else 0
+
         score = (
-            (-10.0 * holes)
-            + (-1.5 * bumpiness)
-            + (-0.6 * aggregate_height)
-            + (-3.0 * blocks_in_well)
-            + lines_weight
+            (self.weights["holes"] * holes)
+            + (self.weights["bumpiness"] * bumpiness)
+            + (self.weights["block_in_well"] * blocks_in_well)
+            + (self.weights["incomplete_clear"] * incomplete_clear)
+            + (self.weights["tetris"] * is_tetris)
         )
+        if is_tetris == 1:
+            score += 1000.0
 
         if held_piece == "I":
-            score += 2.0
+            score += 500.0
 
         return score
 
@@ -229,12 +223,6 @@ class Agent:
         heights[col_has_blocks] = self.rows - board.argmax(axis=0)[col_has_blocks]
         bumpiness = np.sum(np.abs(np.diff(heights)))
         return bumpiness
-
-    def _calculate_aggregate_height(self, board):
-        col_has_blocks = board.any(axis=0)
-        heights = np.zeros(self.cols, dtype=int)
-        heights[col_has_blocks] = self.rows - board.argmax(axis=0)[col_has_blocks]
-        return np.sum(heights)
 
     def _count_blocks_in_well(self, board):
         return np.sum(board[:, self.well_column])
@@ -258,7 +246,6 @@ class Agent:
 
         for move in possible_moves:
             queue_for_future = incoming_queue[1:]
-            # CORRECCIÓN: usar "c" en lugar de "hold"
             if move.actions and move.actions[0] == "c" and current_held_piece == "":
                 queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
@@ -315,29 +302,26 @@ class Agent:
         return best_score_in_branch
 
     def _generate_all_moves(self, board, piece_name) -> list[Move]:
-        #Genera todos los movimientos posibles para una pieza dada, usando coordenadas precalculadas.
         possible_moves = []
-        coords_list = self.piece_coords[piece_name]  # OPT: Coordenadas precalculadas
 
-        for rot_idx, (block_y, block_x) in enumerate(coords_list):
-            # Probar todas las columnas posibles (desde -3 hasta cols)
+        rotations = self.maping_pieces[piece_name]
+
+        for rot_idx, piece_matrix in enumerate(rotations):
+            _, blocks_x = np.where(piece_matrix == 1)
+
             for x in range(-3, self.cols + 1):
-                board_x = block_x + x
+                board_x = blocks_x + x
 
-                # Verificar límites horizontales
                 if np.any(board_x < 0) or np.any(board_x >= self.cols):
                     continue
 
-                # Calcular la posición de caída
-                drop_y = self._get_drop_position(board, block_y, block_x, x)
+                drop_y = self._get_drop_position(board, piece_matrix, x)
 
-                # Colocar la pieza
-                new_board = self._place_piece(board, block_y, block_x, x, drop_y)
+                new_board = self._place_piece(board, piece_matrix, x, drop_y)
 
-                # Eliminar líneas completas
                 final_board, cleared_lines = self._clear_lines(new_board)
 
-                # Generar lista de acciones (rotaciones + desplazamientos + hard drop)
+                # Revisar bien
                 spawn_col = 3
                 actions = []
                 for _ in range(rot_idx):
@@ -345,6 +329,7 @@ class Agent:
 
                 if x < spawn_col:
                     actions.extend(["left"] * (spawn_col - x))
+
                 elif x > spawn_col:
                     actions.extend(["right"] * (x - spawn_col))
 
@@ -357,8 +342,9 @@ class Agent:
 
         return possible_moves
 
-    def _check_collision(self, board, block_y, block_x, offset_x, offset_y):
-        #Verifica colisión usando coordenadas precalculadas.
+    def _check_collision(self, board, piece_matrix, offset_x, offset_y):
+        block_y, block_x = np.where(piece_matrix == 1)
+
         board_y = block_y + offset_y
         board_x = block_x + offset_x
 
@@ -378,16 +364,19 @@ class Agent:
 
         return False
 
-    def _get_drop_position(self, board, block_y, block_x, offset_x):
-        #alcula la posición de caída usando coordenadas precalculadas.
-        current_y = -2
-        while not self._check_collision(board, block_y, block_x, offset_x, current_y):
-            current_y += 1
-        return current_y - 1
+    def _get_drop_position(self, board, piece_matrix, offset_x):
+        curret_y = -2
+        while not self._check_collision(board, piece_matrix, offset_x, curret_y):
+            curret_y += 1
 
-    def _place_piece(self, board, block_y, block_x, offset_x, offset_y):
-        #Coloca la pieza en el tablero usando coordenadas precalculadas.
-        new_board = board.copy()
+        return curret_y - 1
+
+    def _place_piece(self, board, piece_matrix, offset_x, offset_y):
+        new_board = (
+            board.copy()
+        )  # INFO: para evitar que se sobreescriba sobre el tablero
+        block_y, block_x = np.where(piece_matrix == 1)
+
         board_y = block_y + offset_y
         board_x = block_x + offset_x
 
@@ -397,9 +386,6 @@ class Agent:
 
         new_board[board_y_valids, board_x_valids] = 1
         return new_board
-
-    
-    
 
     def _clear_lines(self, board):
         filled_rows = np.all(board == 1, axis=1)
@@ -458,7 +444,7 @@ class Agent:
             current_board, current_piece, incoming_queue[1:], current_held_piece
         )
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = []
             for move in possible_moves:
                 future = executor.submit(
@@ -526,11 +512,10 @@ class Agent:
         incoming_queue = ["T", "J", "O", "T", "I"]
 
         while True:
-            # OPTI: Se usa 'compute' para habilitar el uso nativo de múltiples hilos (ThreadPoolExecutor) 
             best_move = self.compute(
                 incoming_queue,
                 current_board,
-                max_depth=1,
+                max_depth=2,
                 current_held_piece=current_held_piece,
             )
 
@@ -558,4 +543,4 @@ class Agent:
 
             # TODO: Actualizar las fichas en camino.
 
-            sleep(0.05)
+            sleep(0.1)

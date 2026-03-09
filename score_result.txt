@@ -1,0 +1,10 @@
+----------------------------------------
+RESULTADOS DE LA PRUEBA TECNICA (Score Attack)
+----------------------------------------
+Piezas jugadas: 480 / 480
+Lineas limpiadas: 190
+Tetrises conseguidos: 0
+PUNTUACION TOTAL ESTIMADA: 21,300 pts
+Tiempo real de computo: 11.21 segundos
+
+[SUCCESS] EL AGENTE COMPLETO LOS 2 MINS SATISFACTORIAMENTE.
