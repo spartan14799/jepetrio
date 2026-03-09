@@ -210,8 +210,6 @@ class Agent:
 
         return score
 
-        return score
-
     # INFO: Funciones para calcular la combinacion lineal:
 
     def _count_holes(self, board):
