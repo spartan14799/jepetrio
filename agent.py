@@ -1,10 +1,10 @@
-import multiprocessing
-import re
 from typing import Sequence, List
 from dataclasses import dataclass, field
 import pyautogui
 import time
 import numpy as np
+import concurrent.futures
+import multiprocessing
 
 
 # INFO: Estructura usada para la comunicacion entre los niveles del arbol
@@ -191,17 +191,6 @@ class Agent:
     def most_frequent(self, lista: list) -> str:
         return max(set(lista), key=lista.count)
 
-    def start(self):
-        p_processing = multiprocessing.Process(
-            target=self.percept, args=(self.queue_perceptions,)
-        )
-        p_computing = multiprocessing.Process(
-            target=self.compute, args=(self.queue_perceptions, self.queue_actions)
-        )
-        p_acting = multiprocessing.Process(
-            target=self.action, args=(self.queue_actions,)
-        )
-
     def evaluate_move(self, board, cleared_lines):
         holes = self._count_holes(board)
         bumpiness = self._calculate_bumpiness(board)
@@ -254,7 +243,6 @@ class Agent:
                 board=move.board,
                 incoming_queue=incoming_queue[1:],
                 depth=max_depth - 1,
-                # TODO: Arregalar el tetris fantasma, si limpia 4 lineas en diferentes niveles, cotara como tetris cuando no lo es.
                 accumulated_lines=move.cleared_lines,
             )
 
@@ -390,3 +378,51 @@ class Agent:
         new_board = np.vstack((cleared_rows, remaining_rows))
 
         return new_board, num_row_cleared
+
+    # INFO: Funciones para paralelizar
+
+    def __getstate__(self):
+        estado = self.__dict__.copy()
+        estado["queue_perceptions"] = None
+        estado["queue_actions"] = None
+        return estado
+
+    def __setstate__(self, estado):
+        self.__dict__.update(estado)
+
+    def _evaluate_single_branch(self, move, incoming_queue, max_depth):
+        score = self._dfs_search(
+            board=move.board,
+            incoming_queue=incoming_queue[1:],
+            depth=max_depth - 1,
+            accumulated_lines=move.cleared_lines,
+        )
+        move.score = score
+        return move
+
+    def get_best_move_parallel(self, incoming_queue, current_board, max_depth=3):
+        """Metodo paralelo para encontrar el mejor camino"""
+        best_score = float("-inf")
+        best_move = None
+
+        if not incoming_queue:
+            return None
+
+        current_piece = incoming_queue[0]
+        possible_moves = self._generate_all_moves(current_board, current_piece)
+
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            futures = []
+            for move in possible_moves:
+                future = executor.submit(
+                    self._evaluate_single_branch, move, incoming_queue, max_depth
+                )
+                futures.append(future)
+
+            for future in concurrent.futures.as_completed(futures):
+                evaluated_move = future.result()
+
+                if evaluated_move.score > best_score:
+                    best_score = evaluated_move.score
+                    best_move = evaluated_move
+        return best_move
