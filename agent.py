@@ -454,7 +454,6 @@ class Agent:
         with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = []
             for move in possible_moves:
-                # Enviamos el initial_held_piece a los trabajadores
                 future = executor.submit(
                     self._evaluate_single_branch,
                     move,
