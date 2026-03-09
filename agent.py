@@ -491,7 +491,7 @@ class Agent:
 
         moves_con_hold = self._generate_all_moves(current_board, piece_to_play)
         for move in moves_con_hold:
-            move.actions = ["hold"] + move.actions
+            move.actions = ["c"] + move.actions
             move.held_piece = new_held
             all_moves.append(move)
 
