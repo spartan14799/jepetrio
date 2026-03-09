@@ -1,4 +1,3 @@
-import time
 from typing import Sequence, List
 from dataclasses import dataclass, field
 import pyautogui
@@ -137,9 +136,6 @@ class Agent:
         self.queue_perceptions = multiprocessing.Queue()
         self.queue_actions = multiprocessing.Queue()
 
-    def percept(self, queue_outputs):
-        pass
-
     def action(self, queue_outputs):
         keys = {
             "left": "left",
@@ -160,7 +156,6 @@ class Agent:
 
             if comand in keys:
                 key = keys[comand]
-
                 pyautogui.keyDown(key)
                 time.sleep(0.02)
                 pyautogui.keyUp(key)
@@ -253,7 +248,7 @@ class Agent:
 
         for move in possible_moves:
             queue_for_future = incoming_queue[1:]
-            if move.actions and move.actions[0] == "c" and current_held_piece == "":
+            if move.actions and move.actions[0] == "hold" and current_held_piece == "":
                 queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
             score = self._dfs_search(
@@ -496,7 +491,7 @@ class Agent:
 
         moves_con_hold = self._generate_all_moves(current_board, piece_to_play)
         for move in moves_con_hold:
-            move.actions = ["c"] + move.actions
+            move.actions = ["hold"] + move.actions
             move.held_piece = new_held
             all_moves.append(move)
 
