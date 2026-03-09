@@ -260,6 +260,7 @@ class Agent:
 
             if score > best_score:
                 best_score = score
+                move.score = score
                 best_move = move
 
         return best_move
