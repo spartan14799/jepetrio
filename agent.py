@@ -1,10 +1,13 @@
+import time
 from typing import Sequence, List
 from dataclasses import dataclass, field
 import pyautogui
-import time
+from time import sleep
 import numpy as np
 import concurrent.futures
 import multiprocessing
+import queue
+import threading
 
 
 # INFO: Estructura usada para la comunicacion entre los niveles del arbol
@@ -135,9 +138,6 @@ class Agent:
         self.queue_actions = multiprocessing.Queue()
 
     def percept(self, queue_outputs):
-        pass
-
-    def compute(self, queue_inputs, queue_outputs):
         pass
 
     def action(self, queue_outputs):
@@ -436,7 +436,7 @@ class Agent:
         move.score = score
         return move
 
-    def get_best_move_parallel(
+    def compute(
         self, incoming_queue, current_board, max_depth=3, current_held_piece=""
     ):
         best_score = float("-inf")
@@ -501,3 +501,53 @@ class Agent:
             all_moves.append(move)
 
         return all_moves
+
+    def play(self):
+        queue_outputs = queue.Queue()
+
+        thread_action = threading.Thread(
+            target=self.action, args=(queue_outputs,), daemon=True
+        )
+        thread_action.start()
+
+        # TODO: Implementar la vision
+        # Aqui viene el primer escaneo del mapa para tener posicion inicial
+
+        current_board = np.zeros((20, 10), dtype=int)
+        current_held_piece = ""
+        # Ejemplo:
+        incoming_queue = ["T", "J", "O", "T", "I"]
+
+        while True:
+            best_move = self.compute(
+                incoming_queue,
+                current_board,
+                max_depth=2,
+                current_held_piece=current_held_piece,
+            )
+
+            if not best_move:
+                queue_outputs.put("^")
+                break
+
+            for key in best_move.actions:
+                queue_outputs.put(key)
+
+            current_board = best_move.board
+            current_held_piece = best_move.held_piece
+
+            if (
+                best_move.actions
+                and best_move.actions[0] == "c"
+                and current_held_piece == ""
+            ):
+                incoming_queue = incoming_queue[2:] if len(incoming_queue) > 1 else []
+            else:
+                incoming_queue = incoming_queue[1:]
+
+            while not queue_outputs.empty():
+                sleep(0.01)
+
+            # TODO: Actualizar las fichas en camino.
+
+            sleep(0.1)
