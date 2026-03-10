@@ -4,7 +4,6 @@ import pyautogui
 from time import sleep
 import numpy as np
 import concurrent.futures
-import multiprocessing
 import queue
 import threading
 
@@ -43,12 +42,12 @@ class Agent:
                 (335, 1322),
             ],
             [
-                (465, 1317),
-                (465, 1318),
-                (465, 1319),
-                (465, 1320),
-                (465, 1321),
-                (465, 1322),
+                (472, 1317),
+                (472, 1318),
+                (472, 1319),
+                (472, 1320),
+                (472, 1321),
+                (472, 1322),
             ],
             [
                 (609, 1317),
@@ -80,8 +79,8 @@ class Agent:
     }
 
     def __init__(self, weights=None):
-        self.hold = None
-        self.next_blocks_attr = [None, None, None, None, None]
+        self.current_board = np.zeros((20, 10), dtype=int)
+        self.hold = ""
         self.weights = (
             weights
             if weights
@@ -133,9 +132,13 @@ class Agent:
             ],
         }
 
-        self.queue_perceptions = multiprocessing.Queue()
-        self.queue_actions = multiprocessing.Queue()
+        self.queue_outputs = queue.Queue()
+        self.thread_action = threading.Thread(
+            target=self.action, args=(self.queue_outputs,), daemon=True
+        )
+        self.thread_action.start()
 
+    # Execute actions
     def action(self, queue_outputs):
         keys = {
             "left": "left",
@@ -157,13 +160,15 @@ class Agent:
             if comand in keys:
                 key = keys[comand]
                 pyautogui.keyDown(key)
-                time.sleep(0.02)
+                sleep(0.02)
                 pyautogui.keyUp(key)
 
             else:
                 print(f"Movimiento no reconocido: {comand}")
 
-    def next_blocks(self, screenshot: np.typing.NDArray[np.uint8]) -> list:
+    def percept(self, screenshot: np.typing.NDArray[np.uint8] | None) -> list | None:
+        if screenshot is None:
+            return None
         return [
             self.most_frequent(self.possible_colors(screenshot, i)) for i in range(0, 5)
         ]
@@ -404,8 +409,8 @@ class Agent:
 
     def __getstate__(self):
         estado = self.__dict__.copy()
-        estado["queue_perceptions"] = None
-        estado["queue_actions"] = None
+        estado["queue_outputs"] = None
+        estado["thread_action"] = None
         return estado
 
     def __setstate__(self, estado):
@@ -416,7 +421,7 @@ class Agent:
     ):
         queue_for_future = incoming_queue[1:]
 
-        if move.actions and move.actions[0] == "c" and initial_held_piece == "":
+        if move.actions and move.actions[0] == "hold" and initial_held_piece == "":
             queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
         score = self._dfs_search(
@@ -429,11 +434,9 @@ class Agent:
         move.score = score
         return move
 
-    def compute(
-        self, incoming_queue, current_board, max_depth=3, current_held_piece=""
-    ):
+    def compute(self, incoming_queue, max_depth=3, current_held_piece=""):
         best_score = float("-inf")
-        best_move = None
+        best_move = Move(self.current_board, 0)
 
         if not incoming_queue:
             return None
@@ -441,7 +444,7 @@ class Agent:
         current_piece = incoming_queue[0]
 
         possible_moves = self._generate_moves_with_hold(
-            current_board, current_piece, incoming_queue[1:], current_held_piece
+            self.current_board, current_piece, incoming_queue[1:], current_held_piece
         )
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -463,6 +466,7 @@ class Agent:
                     best_score = evaluated_move.score
                     best_move = evaluated_move
 
+        self.current_board = best_move.board
         return best_move
 
     # INFO: Metodos para encontrar movimientos usando el hold
@@ -495,52 +499,26 @@ class Agent:
 
         return all_moves
 
-    def play(self):
-        queue_outputs = queue.Queue()
-
-        thread_action = threading.Thread(
-            target=self.action, args=(queue_outputs,), daemon=True
+    def play(self, incoming_queue) -> str:
+        best_move = self.compute(
+            incoming_queue,
+            max_depth=2,
+            current_held_piece=self.hold,
         )
-        thread_action.start()
 
-        # TODO: Implementar la vision
-        # Aqui viene el primer escaneo del mapa para tener posicion inicial
+        if not best_move:
+            self.queue_outputs.put("^")
+            return "^"
 
-        current_board = np.zeros((20, 10), dtype=int)
-        current_held_piece = ""
-        # Ejemplo:
-        incoming_queue = ["T", "J", "O", "T", "I"]
+        for key in best_move.actions:
+            self.queue_outputs.put(key)
 
-        while True:
-            best_move = self.compute(
-                incoming_queue,
-                current_board,
-                max_depth=2,
-                current_held_piece=current_held_piece,
-            )
+        self.current_board = best_move.board
+        self.hold = best_move.held_piece
 
-            if not best_move:
-                queue_outputs.put("^")
-                break
+        while not self.queue_outputs.empty():
+            sleep(0.01)
 
-            for key in best_move.actions:
-                queue_outputs.put(key)
+        sleep(0.1)
 
-            current_board = best_move.board
-            current_held_piece = best_move.held_piece
-
-            if (
-                best_move.actions
-                and best_move.actions[0] == "c"
-                and current_held_piece == ""
-            ):
-                incoming_queue = incoming_queue[2:] if len(incoming_queue) > 1 else []
-            else:
-                incoming_queue = incoming_queue[1:]
-
-            while not queue_outputs.empty():
-                sleep(0.01)
-
-            # TODO: Actualizar las fichas en camino.
-
-            sleep(0.1)
+        return "*"
