@@ -4,7 +4,6 @@ import pyautogui
 from time import sleep
 import numpy as np
 import concurrent.futures
-import multiprocessing
 import queue
 import threading
 
@@ -81,7 +80,7 @@ class Agent:
 
     def __init__(self, weights=None):
         self.current_board = np.zeros((20, 10), dtype=int)
-        self.hold = None
+        self.hold = ""
         self.weights = (
             weights
             if weights
@@ -133,8 +132,11 @@ class Agent:
             ],
         }
 
-        self.queue_perceptions = multiprocessing.Queue()
-        self.queue_actions = multiprocessing.Queue()
+        self.queue_outputs = queue.Queue()
+        self.thread_action = threading.Thread(
+            target=self.action, args=(self.queue_outputs,), daemon=True
+        )
+        self.thread_action.start()
 
     # Execute actions
     def action(self, queue_outputs):
@@ -407,8 +409,8 @@ class Agent:
 
     def __getstate__(self):
         estado = self.__dict__.copy()
-        estado["queue_perceptions"] = None
-        estado["queue_actions"] = None
+        estado["queue_outputs"] = None
+        estado["thread_action"] = None
         return estado
 
     def __setstate__(self, estado):
@@ -419,7 +421,7 @@ class Agent:
     ):
         queue_for_future = incoming_queue[1:]
 
-        if move.actions and move.actions[0] == "c" and initial_held_piece == "":
+        if move.actions and move.actions[0] == "hold" and initial_held_piece == "":
             queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
         score = self._dfs_search(
@@ -442,7 +444,7 @@ class Agent:
         current_piece = incoming_queue[0]
 
         possible_moves = self._generate_moves_with_hold(
-            self.current_board, current_piece, incoming_queue[1:], self.hold
+            self.current_board, current_piece, incoming_queue[1:], current_held_piece
         )
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -491,59 +493,32 @@ class Agent:
 
         moves_con_hold = self._generate_all_moves(current_board, piece_to_play)
         for move in moves_con_hold:
-            move.actions = ["c"] + move.actions
+            move.actions = ["hold"] + move.actions
             move.held_piece = new_held
             all_moves.append(move)
 
         return all_moves
 
     def play(self, incoming_queue) -> str:
-
-        queue_outputs = queue.Queue()
-
-        thread_action = threading.Thread(
-            target=self.action, args=(queue_outputs,), daemon=True
+        best_move = self.compute(
+            incoming_queue,
+            max_depth=2,
+            current_held_piece=self.hold,
         )
-        thread_action.start()
 
-        # TODO: Implementar la vision
-        # Aqui viene el primer escaneo del mapa para tener posicion inicial
+        if not best_move:
+            self.queue_outputs.put("^")
+            return "^"
 
-        incoming_queue = incoming_queue
-        current_held_piece = ""
+        for key in best_move.actions:
+            self.queue_outputs.put(key)
 
-        while True:
-            best_move = self.compute(
-                incoming_queue,
-                # max_depth=3,
-                current_held_piece=current_held_piece,
-            )
+        self.current_board = best_move.board
+        self.hold = best_move.held_piece
 
-            if not best_move:
-                queue_outputs.put("^")
-                break
+        while not self.queue_outputs.empty():
+            sleep(0.01)
 
-            print(best_move.actions)
-            for key in best_move.actions:
-                queue_outputs.put(key)
+        sleep(0.1)
 
-            self.current_board = best_move.board
-            current_held_piece = best_move.held_piece
-
-            if (
-                best_move.actions
-                and best_move.actions[0] == "c"
-                and current_held_piece == ""
-            ):
-                incoming_queue = incoming_queue[2:] if len(incoming_queue) > 1 else []
-            else:
-                incoming_queue = incoming_queue[1:]
-
-            while not queue_outputs.empty():
-                sleep(0.01)
-
-            # TODO: Actualizar las fichas en camino.
-
-            sleep(0.1)
-            # return "*"
         return "*"

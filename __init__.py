@@ -8,16 +8,18 @@ agent_started = False
 game_started = False
 game_finished = False
 
+
 def start_agent():
     global agent_started
     agent_started = True
     print("Se inició el agente y el ambiente")
 
+
 if __name__ == "__main__":
     print("Presione 'p' para empezar el juego")
     e = environment.Environment()
     a = agent.Agent()
-    keyboard.add_hotkey('p', start_agent)
+    keyboard.add_hotkey("p", start_agent)
 
     while not agent_started:
         sleep(0.1)
@@ -32,7 +34,11 @@ if __name__ == "__main__":
     r = e.response("*")
     sleep(3)
     while not game_finished:
-        v = a.play(a.percept(r))
-        r = e.response(v)
+        r = e.response("*")
+        incoming_queue = a.percept(r)
+        if incoming_queue:
+            v = a.play(incoming_queue)
+            if v == "^":
+                game_finished = True
+
         sleep(0.1)
-        # TODO: revisar cuando el juego terminó, devolver puntuación
