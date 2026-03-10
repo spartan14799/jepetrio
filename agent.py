@@ -43,12 +43,12 @@ class Agent:
                 (335, 1322),
             ],
             [
-                (465, 1317),
-                (465, 1318),
-                (465, 1319),
-                (465, 1320),
-                (465, 1321),
-                (465, 1322),
+                (472, 1317),
+                (472, 1318),
+                (472, 1319),
+                (472, 1320),
+                (472, 1321),
+                (472, 1322),
             ],
             [
                 (609, 1317),
@@ -164,7 +164,9 @@ class Agent:
             else:
                 print(f"Movimiento no reconocido: {comand}")
 
-    def percept(self, screenshot: np.typing.NDArray[np.uint8]) -> list:
+    def percept(self, screenshot: np.typing.NDArray[np.uint8] | None) -> list | None:
+        if screenshot is None:
+            return None
         return [
             self.most_frequent(self.possible_colors(screenshot, i)) for i in range(0, 5)
         ]
@@ -508,12 +510,12 @@ class Agent:
         # Aqui viene el primer escaneo del mapa para tener posicion inicial
 
         incoming_queue = incoming_queue
+        current_held_piece = ""
 
         while True:
             best_move = self.compute(
                 incoming_queue,
-                current_board,
-                max_depth=2,
+                # max_depth=3,
                 current_held_piece=current_held_piece,
             )
 
@@ -521,10 +523,11 @@ class Agent:
                 queue_outputs.put("^")
                 break
 
+            print(best_move.actions)
             for key in best_move.actions:
                 queue_outputs.put(key)
 
-            current_board = best_move.board
+            self.current_board = best_move.board
             current_held_piece = best_move.held_piece
 
             if (
@@ -542,5 +545,5 @@ class Agent:
             # TODO: Actualizar las fichas en camino.
 
             sleep(0.1)
-        # WARN: Por ahora un retorno vacio, el agente, luego de jugar sus movimientos debe retornar "*" o "^", para pedir nueva captura, o decir que el juego terminó
-        return ""
+            # return "*"
+        return "*"
