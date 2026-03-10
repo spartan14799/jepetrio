@@ -502,7 +502,7 @@ class Agent:
     def play(self, incoming_queue) -> str:
         best_move = self.compute(
             incoming_queue,
-            max_depth=2,
+            max_depth=3,
             current_held_piece=self.hold,
         )
 
