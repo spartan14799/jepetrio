@@ -290,7 +290,7 @@ class Agent:
             total_lines = accumulated_lines + move.cleared_lines
 
             queue_for_future = incoming_queue[1:]
-            if move.actions and move.actions[0] == "c" and current_held_piece == "":
+            if move.actions and move.actions[0] == "hold" and current_held_piece == "":
                 queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
             score = self._dfs_search(
@@ -493,7 +493,7 @@ class Agent:
 
         moves_con_hold = self._generate_all_moves(current_board, piece_to_play)
         for move in moves_con_hold:
-            move.actions = ["c"] + move.actions
+            move.actions = ["hold"] + move.actions
             move.held_piece = new_held
             all_moves.append(move)
 
