@@ -80,8 +80,8 @@ class Agent:
     }
 
     def __init__(self, weights=None):
+        self.current_board = np.zeros((20, 10), dtype=int)
         self.hold = None
-        self.next_blocks_attr = [None, None, None, None, None]
         self.weights = (
             weights
             if weights
@@ -136,6 +136,7 @@ class Agent:
         self.queue_perceptions = multiprocessing.Queue()
         self.queue_actions = multiprocessing.Queue()
 
+    # Execute actions
     def action(self, queue_outputs):
         keys = {
             "left": "left",
@@ -157,13 +158,13 @@ class Agent:
             if comand in keys:
                 key = keys[comand]
                 pyautogui.keyDown(key)
-                time.sleep(0.02)
+                sleep(0.02)
                 pyautogui.keyUp(key)
 
             else:
                 print(f"Movimiento no reconocido: {comand}")
 
-    def next_blocks(self, screenshot: np.typing.NDArray[np.uint8]) -> list:
+    def percept(self, screenshot: np.typing.NDArray[np.uint8]) -> list:
         return [
             self.most_frequent(self.possible_colors(screenshot, i)) for i in range(0, 5)
         ]
@@ -429,11 +430,9 @@ class Agent:
         move.score = score
         return move
 
-    def compute(
-        self, incoming_queue, current_board, max_depth=3, current_held_piece=""
-    ):
+    def compute(self, incoming_queue, max_depth=3, current_held_piece=""):
         best_score = float("-inf")
-        best_move = None
+        best_move = Move(self.current_board, 0)
 
         if not incoming_queue:
             return None
@@ -441,7 +440,7 @@ class Agent:
         current_piece = incoming_queue[0]
 
         possible_moves = self._generate_moves_with_hold(
-            current_board, current_piece, incoming_queue[1:], current_held_piece
+            self.current_board, current_piece, incoming_queue[1:], self.hold
         )
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -463,6 +462,7 @@ class Agent:
                     best_score = evaluated_move.score
                     best_move = evaluated_move
 
+        self.current_board = best_move.board
         return best_move
 
     # INFO: Metodos para encontrar movimientos usando el hold
@@ -495,7 +495,8 @@ class Agent:
 
         return all_moves
 
-    def play(self):
+    def play(self, incoming_queue) -> str:
+
         queue_outputs = queue.Queue()
 
         thread_action = threading.Thread(
@@ -506,10 +507,7 @@ class Agent:
         # TODO: Implementar la vision
         # Aqui viene el primer escaneo del mapa para tener posicion inicial
 
-        current_board = np.zeros((20, 10), dtype=int)
-        current_held_piece = ""
-        # Ejemplo:
-        incoming_queue = ["T", "J", "O", "T", "I"]
+        incoming_queue = incoming_queue
 
         while True:
             best_move = self.compute(
@@ -544,3 +542,5 @@ class Agent:
             # TODO: Actualizar las fichas en camino.
 
             sleep(0.1)
+        # WARN: Por ahora un retorno vacio, el agente, luego de jugar sus movimientos debe retornar "*" o "^", para pedir nueva captura, o decir que el juego terminó
+        return ""
