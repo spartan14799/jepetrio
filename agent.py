@@ -6,6 +6,7 @@ import numpy as np
 import concurrent.futures
 import queue
 import threading
+import tetris_motor
 
 
 # INFO: Estructura usada para la comunicacion entre los niveles del arbol
@@ -117,7 +118,7 @@ class Agent:
                 np.array([[0, 0, 0], [1, 1, 1], [1, 0, 0]]),
                 np.array([[1, 1, 0], [0, 1, 0], [0, 1, 0]]),
             ],
-            "O": [np.array([[0,0,0], [0, 1, 1], [0, 1, 1]])],
+            "O": [np.array([[0, 0, 0], [0, 1, 1], [0, 1, 1]])],
             # "O": [np.array([[1, 1], [1, 1]])],
             "S": [
                 np.array([[0, 1, 1], [1, 1, 0], [0, 0, 0]]),
@@ -235,7 +236,7 @@ class Agent:
         heights[col_has_blocks] = self.rows - board.argmax(axis=0)[col_has_blocks]
         bumpiness = np.sum(np.abs(np.diff(heights)))
         return bumpiness
-    
+
     def _calculate_aggregate_height(self, board):
         col_has_blocks = board.any(axis=0)
         heights = np.zeros(self.cols, dtype=int)
@@ -513,6 +514,29 @@ class Agent:
 
         return all_moves
 
+    def compute_rust(self, incoming_queue, max_depth=1, current_held_piece=""):
+        if not incoming_queue:
+            return None
+
+        board_list = self.current_board.tolist()
+
+        result = tetris_motor.compute_best_move(
+            board_list, incoming_queue, current_held_piece, max_depth
+        )
+
+        if result is None:
+            return None
+
+        best_move = Move(
+            board=self.current_board,  # Temporal: idealmente Rust devolverá el nuevo tablero luego
+            cleared_lines=0,
+            actions=result["actions"],
+            score=result["score"],
+            held_piece=result["held_piece"],
+        )
+
+        return best_move
+
     def play(self, incoming_queue) -> str:
         if self.current_playing_piece is not None:
             incoming_queue.insert(0, self.current_playing_piece)
@@ -525,7 +549,6 @@ class Agent:
         if not best_move:
             self.queue_outputs.put("^")
             return "^"
-
 
         for key in best_move.actions:
             self.queue_outputs.put(key)
