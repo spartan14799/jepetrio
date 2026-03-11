@@ -81,12 +81,14 @@ class Agent:
     def __init__(self, weights=None):
         self.current_board = np.zeros((20, 10), dtype=int)
         self.hold = ""
+        self.current_playing_piece = None
         self.weights = (
             weights
             if weights
             else {
-                "holes": -10.0,
+                "holes": -25.0,
                 "bumpiness": -2.0,
+                "aggregate_height": -25.0,
                 "block_in_well": -8.0,
                 "incomplete_clear": -5.0,
                 "tetris": 15.0,
@@ -115,7 +117,8 @@ class Agent:
                 np.array([[0, 0, 0], [1, 1, 1], [1, 0, 0]]),
                 np.array([[1, 1, 0], [0, 1, 0], [0, 1, 0]]),
             ],
-            "O": [np.array([[1, 1], [1, 1]])],
+            "O": [np.array([[0,0,0], [0, 1, 1], [0, 1, 1]])],
+            # "O": [np.array([[1, 1], [1, 1]])],
             "S": [
                 np.array([[0, 1, 1], [1, 1, 0], [0, 0, 0]]),
                 np.array([[0, 1, 0], [0, 1, 1], [0, 0, 1]]),
@@ -160,8 +163,9 @@ class Agent:
             if comand in keys:
                 key = keys[comand]
                 pyautogui.keyDown(key)
-                sleep(0.02)
+                sleep(0.2)
                 pyautogui.keyUp(key)
+                sleep(0.2)
 
             else:
                 print(f"Movimiento no reconocido: {comand}")
@@ -195,6 +199,7 @@ class Agent:
     def evaluate_move(self, board, cleared_lines, held_piece):
         holes = self._count_holes(board)
         bumpiness = self._calculate_bumpiness(board)
+        aggregate_height = self._calculate_aggregate_height(board)
         blocks_in_well = self._count_blocks_in_well(board)
 
         is_tetris = 1 if cleared_lines >= 4 else 0
@@ -203,6 +208,7 @@ class Agent:
         score = (
             (self.weights["holes"] * holes)
             + (self.weights["bumpiness"] * bumpiness)
+            + (self.weights["aggregate_height"] * aggregate_height)
             + (self.weights["block_in_well"] * blocks_in_well)
             + (self.weights["incomplete_clear"] * incomplete_clear)
             + (self.weights["tetris"] * is_tetris)
@@ -228,6 +234,12 @@ class Agent:
         heights[col_has_blocks] = self.rows - board.argmax(axis=0)[col_has_blocks]
         bumpiness = np.sum(np.abs(np.diff(heights)))
         return bumpiness
+    
+    def _calculate_aggregate_height(self, board):
+        col_has_blocks = board.any(axis=0)
+        heights = np.zeros(self.cols, dtype=int)
+        heights[col_has_blocks] = self.rows - board.argmax(axis=0)[col_has_blocks]
+        return np.sum(heights)
 
     def _count_blocks_in_well(self, board):
         return np.sum(board[:, self.well_column])
@@ -467,6 +479,7 @@ class Agent:
                     best_move = evaluated_move
 
         self.current_board = best_move.board
+        print(best_move.actions)
         return best_move
 
     # INFO: Metodos para encontrar movimientos usando el hold
@@ -500,9 +513,13 @@ class Agent:
         return all_moves
 
     def play(self, incoming_queue) -> str:
+        print("Entrarn", incoming_queue)
+        if self.current_playing_piece is not None:
+            incoming_queue.insert(0, self.current_playing_piece)
+        print(f"Estas son las piezas que siguen: {incoming_queue}")
         best_move = self.compute(
             incoming_queue,
-            max_depth=3,
+            max_depth=1,
             current_held_piece=self.hold,
         )
 
@@ -510,10 +527,19 @@ class Agent:
             self.queue_outputs.put("^")
             return "^"
 
+
         for key in best_move.actions:
             self.queue_outputs.put(key)
 
+        print("hold" in best_move.actions)
+        if self.hold == "" and "hold" in best_move.actions:
+            self.current_playing_piece = incoming_queue[2]
+        else:
+            self.current_playing_piece = incoming_queue[1]
+        print(self.current_playing_piece)
+
         self.current_board = best_move.board
+        print(self.current_board)
         self.hold = best_move.held_piece
 
         while not self.queue_outputs.empty():

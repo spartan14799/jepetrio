@@ -31,8 +31,12 @@ if __name__ == "__main__":
         if r is not None and e.game_countdown(r):
             game_started = True
     # Cuenta de 3 segundos
+    sleep(1)
     r = e.response("*")
-    sleep(3)
+    first_queue = a.percept(r)
+    sleep(2)
+    v = a.play(first_queue)
+
     while not game_finished:
         r = e.response("*")
         incoming_queue = a.percept(r)
