@@ -149,7 +149,7 @@ class Agent:
             "soft_drop": "down",
             "hard_drop": "space",
             "rotate_countercw": "z",
-            "rotate_cw": "up",
+            "rotate_cw": "x",
             "hold": "c",
             "rotate_180": "a",
         }
@@ -162,10 +162,11 @@ class Agent:
 
             if comand in keys:
                 key = keys[comand]
-                pyautogui.keyDown(key)
-                sleep(0.2)
-                pyautogui.keyUp(key)
-                sleep(0.2)
+                pyautogui.press(key)
+                # pyautogui.keyDown(key)
+                # sleep(0.1)
+                # pyautogui.keyUp(key)
+                # sleep(0.2)
 
             else:
                 print(f"Movimiento no reconocido: {comand}")
@@ -513,10 +514,8 @@ class Agent:
         return all_moves
 
     def play(self, incoming_queue) -> str:
-        print("Entrarn", incoming_queue)
         if self.current_playing_piece is not None:
             incoming_queue.insert(0, self.current_playing_piece)
-        print(f"Estas son las piezas que siguen: {incoming_queue}")
         best_move = self.compute(
             incoming_queue,
             max_depth=1,
@@ -531,19 +530,16 @@ class Agent:
         for key in best_move.actions:
             self.queue_outputs.put(key)
 
-        print("hold" in best_move.actions)
         if self.hold == "" and "hold" in best_move.actions:
             self.current_playing_piece = incoming_queue[2]
         else:
             self.current_playing_piece = incoming_queue[1]
-        print(self.current_playing_piece)
 
         self.current_board = best_move.board
-        print(self.current_board)
         self.hold = best_move.held_piece
 
         while not self.queue_outputs.empty():
-            sleep(0.01)
+            sleep(0.2)
 
         sleep(0.1)
 
