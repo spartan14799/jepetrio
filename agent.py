@@ -87,14 +87,14 @@ class Agent:
             weights
             if weights
             else {
-                "holes": -50.0,           
-                "bumpiness": -5.0,        
-                "aggregate_height": -5.0, 
+                "holes": -40.0,           
+                "bumpiness": -3.0,        
+                "aggregate_height": -15.0, 
                 "block_in_well": -0.1,    
-                "incomplete_clear": 10.0, 
-                "tetris": 200.0,          
-                "well_depth": 20.0,       # Nuevo: Bonus por profundidad del well
-                "flat_top": 30.0,         # Nuevo: Bonus por top plano en 9 columnas
+                "incomplete_clear": -20, 
+                "tetris": 100.0,          
+                "well_depth": 15.0,       # Nuevo: Bonus por profundidad del well
+                "flat_top": 20.0,         # Nuevo: Bonus por top plano en 9 columnas
             }
         )
 
@@ -209,7 +209,7 @@ class Agent:
         if self._is_early_game(board):
             bottom_holes = self._count_bottom_holes(board, 3)  # Huecos en últimas 3 filas
             if bottom_holes > 0:
-                early_game_penalty = 10000.0 * bottom_holes  # Penalización extrema
+                early_game_penalty = 5000 * bottom_holes  # Penalización extrema
 
 
         bumpiness = self._calculate_bumpiness(board)
@@ -243,7 +243,9 @@ class Agent:
         
         # Nuevo: Bonus por tener I lista con well profundo
         if has_i_ready and well_depth >= 3:
-            score += 2000.0 * well_depth
+            score += 8000.0 * well_depth  
+        elif has_i_ready:
+            score += 1000.0
         
         # Nuevo: Penalizar si cubrimos el well
         score += self.weights["holes"] * covered_well * 3
@@ -252,12 +254,12 @@ class Agent:
         bottom_holes_count = self._count_bottom_holes(board, 3) if self._is_early_game(board) else 0
         
         if 0 < cleared_lines < 4:
-            if bottom_holes_count > 0 and cleared_lines >= 2:
-                score += 500.0 * cleared_lines
+            if bottom_holes_count > 0 and cleared_lines >= 1:
+                score += 1000.0 * cleared_lines
             else:
-                score -= 2000.0 * (4 - cleared_lines)
+                score -= 500.0 * (4 - cleared_lines)
                 if well_depth >= 2:
-                    score -= 3000.0
+                    score -= 1000.0
         
         # Nuevo: Penalizar quedarse bajo sin hacer Tetris
         if aggregate_height < 10 and is_tetris == 0:
@@ -271,7 +273,7 @@ class Agent:
         if self._is_early_game(board) and cleared_lines == 0:
             first_row_holes = self._count_first_row_holes(board)
             if first_row_holes > 0:
-                score -= 5000.0 * first_row_holes
+                score -= 2000.0 * first_row_holes
 
         return score
 
@@ -287,11 +289,11 @@ class Agent:
         for i in range(self.rows):
             # Filas más bajas (índices altos) tienen mayor peso
             if i >= self.rows - 5:  # Últimas 5 filas
-                row_weights[i] = 10.0  # Peso 10x para huecos en base
+                row_weights[i] = 5.0  # Peso 10x para huecos en base
             elif i >= self.rows - 10:  # Filas 6-10 desde abajo
                 row_weights[i] = 5.0   # Peso 5x para huecos medios-bajos
             else:
-                row_weights[i] = 1.0   # Peso normal para huecos altos
+                row_weights[i] = 2.0   # Peso normal para huecos altos
         
         weighted_holes = holes * row_weights.reshape(-1, 1)
         return int(np.sum(weighted_holes))
@@ -673,10 +675,13 @@ class Agent:
         """Genera movimientos normales Y movimientos usando el Hold."""
         all_moves = []
 
-        normal_moves = self._generate_all_moves(current_board, current_piece)
-        for move in normal_moves:
-            move.held_piece = current_held_piece
-            all_moves.append(move)
+        # Nuevo: Solo generar normales si no tenemos I en hold con well listo
+        well_depth = self._calculate_well_depth(current_board)
+        if not (current_held_piece == "I" and well_depth >= 3):
+            normal_moves = self._generate_all_moves(current_board, current_piece)
+            for move in normal_moves:
+                move.held_piece = current_held_piece
+                all_moves.append(move)
 
         if current_held_piece == "":
             if not incoming_queue:
@@ -698,6 +703,7 @@ class Agent:
     def play(self, incoming_queue) -> str:
         if self.current_playing_piece is not None:
             incoming_queue.insert(0, self.current_playing_piece)
+            self.current_playing_piece = None  # Nuevo: Resetear después de insertar
         best_move = self.compute(
             incoming_queue,
             max_depth=1,
@@ -708,14 +714,14 @@ class Agent:
             self.queue_outputs.put("^")
             return "^"
 
-
         for key in best_move.actions:
             self.queue_outputs.put(key)
 
+        
         if self.hold == "" and "hold" in best_move.actions:
-            self.current_playing_piece = incoming_queue[2]
+            self.current_playing_piece = incoming_queue[2] if len(incoming_queue) > 2 else None
         else:
-            self.current_playing_piece = incoming_queue[1]
+            self.current_playing_piece = incoming_queue[1] if len(incoming_queue) > 1 else None
 
         self.current_board = best_move.board
         self.hold = best_move.held_piece
