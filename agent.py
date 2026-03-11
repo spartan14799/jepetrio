@@ -82,16 +82,19 @@ class Agent:
         self.current_board = np.zeros((20, 10), dtype=int)
         self.hold = ""
         self.current_playing_piece = None
+        # Cambio: Pesos modificados para priorizar Tetris y evitar huecos en early game
         self.weights = (
             weights
             if weights
             else {
-                "holes": -25.0,
-                "bumpiness": -2.0,
-                "aggregate_height": -25.0,
-                "block_in_well": -8.0,
-                "incomplete_clear": -5.0,
-                "tetris": 15.0,
+                "holes": -50.0,           
+                "bumpiness": -5.0,        
+                "aggregate_height": -5.0, 
+                "block_in_well": -0.1,    
+                "incomplete_clear": 10.0, 
+                "tetris": 200.0,          
+                "well_depth": 20.0,       # Nuevo: Bonus por profundidad del well
+                "flat_top": 30.0,         # Nuevo: Bonus por top plano en 9 columnas
             }
         )
 
@@ -197,11 +200,27 @@ class Agent:
     def most_frequent(self, lista: list) -> str:
         return max(set(lista), key=lista.count)
 
-    def evaluate_move(self, board, cleared_lines, held_piece):
+    # Cambio: Firma modificada para recibir incoming_queue
+    def evaluate_move(self, board, cleared_lines, held_piece, incoming_queue=None):
         holes = self._count_holes(board)
+
+        # Nuevo: Penalización masiva por huecos en líneas 1-3 en early game
+        early_game_penalty = 0.0
+        if self._is_early_game(board):
+            bottom_holes = self._count_bottom_holes(board, 3)  # Huecos en últimas 3 filas
+            if bottom_holes > 0:
+                early_game_penalty = 10000.0 * bottom_holes  # Penalización extrema
+
+
         bumpiness = self._calculate_bumpiness(board)
         aggregate_height = self._calculate_aggregate_height(board)
         blocks_in_well = self._count_blocks_in_well(board)
+
+        # Nuevo: Métricas de well-building
+        well_depth = self._calculate_well_depth(board)
+        flatness = self._calculate_flatness(board)
+        has_i_ready = self._has_i_piece_ready(held_piece, incoming_queue)
+        covered_well = self._count_covered_in_well(board)
 
         is_tetris = 1 if cleared_lines >= 4 else 0
         incomplete_clear = cleared_lines if 0 < cleared_lines < 4 else 0
@@ -213,21 +232,82 @@ class Agent:
             + (self.weights["block_in_well"] * blocks_in_well)
             + (self.weights["incomplete_clear"] * incomplete_clear)
             + (self.weights["tetris"] * is_tetris)
+            + (self.weights["well_depth"] * well_depth)      # Nuevo
+            + (self.weights["flat_top"] * flatness)          # Nuevo
+            - early_game_penalty  # Nuevo: Restar penalización directamente
         )
+        
+        # Cambio: Bonus masivo por Tetris
         if is_tetris == 1:
-            score += 1000.0
+            score += 10000.0  # Cambio: Era 1000.0
+        
+        # Nuevo: Bonus por tener I lista con well profundo
+        if has_i_ready and well_depth >= 3:
+            score += 2000.0 * well_depth
+        
+        # Nuevo: Penalizar si cubrimos el well
+        score += self.weights["holes"] * covered_well * 3
+        
+        # Nuevo: Penalización extrema por limpiar pocas líneas
+        bottom_holes_count = self._count_bottom_holes(board, 3) if self._is_early_game(board) else 0
+        
+        if 0 < cleared_lines < 4:
+            if bottom_holes_count > 0 and cleared_lines >= 2:
+                score += 500.0 * cleared_lines
+            else:
+                score -= 2000.0 * (4 - cleared_lines)
+                if well_depth >= 2:
+                    score -= 3000.0
+        
+        # Nuevo: Penalizar quedarse bajo sin hacer Tetris
+        if aggregate_height < 10 and is_tetris == 0:
+            score -= 1000.0
 
-        if held_piece == "I":
-            score += 500.0
+        # Nuevo: Penalizar huecos en la parte baja del tablero (especialmente early game)
+        low_holes = self._count_low_holes(board)
+        score += self.weights["holes"] * low_holes * 5
+        
+        # Nuevo: Penalizar específicamente huecos en primera línea en early game
+        if self._is_early_game(board) and cleared_lines == 0:
+            first_row_holes = self._count_first_row_holes(board)
+            if first_row_holes > 0:
+                score -= 5000.0 * first_row_holes
 
         return score
 
     # INFO: Funciones para calcular la combinacion lineal:
 
     def _count_holes(self, board):
+        # Cambio: Penalización ponderada por altura del hueco
         accumulated_blocks = np.maximum.accumulate(board, axis=0)
         holes = (board == 0) & (accumulated_blocks == 1)
-        return np.sum(holes)
+        
+        # Nuevo: Peso extra para huecos en filas bajas (líneas 0-5 desde abajo)
+        row_weights = np.ones(self.rows)
+        for i in range(self.rows):
+            # Filas más bajas (índices altos) tienen mayor peso
+            if i >= self.rows - 5:  # Últimas 5 filas
+                row_weights[i] = 10.0  # Peso 10x para huecos en base
+            elif i >= self.rows - 10:  # Filas 6-10 desde abajo
+                row_weights[i] = 5.0   # Peso 5x para huecos medios-bajos
+            else:
+                row_weights[i] = 1.0   # Peso normal para huecos altos
+        
+        weighted_holes = holes * row_weights.reshape(-1, 1)
+        return int(np.sum(weighted_holes))
+
+    def _count_bottom_holes(self, board, num_rows=3):
+        """Cuenta huecos específicamente en las últimas N filas."""
+        holes = 0
+        start_row = self.rows - num_rows  # Desde qué fila empezar
+        
+        for row in range(start_row, self.rows):
+            for col in range(self.cols - 1):  # Excluir well
+                if board[row, col] == 0:
+                    # Verificar si hay bloques arriba (es un hueco)
+                    if np.any(board[:row, col] == 1):
+                        holes += 1
+        return holes
 
     def _calculate_bumpiness(self, board):
         col_has_blocks = board.any(axis=0)
@@ -244,6 +324,93 @@ class Agent:
 
     def _count_blocks_in_well(self, board):
         return np.sum(board[:, self.well_column])
+
+    # Nuevo: Métodos para well-building y early game
+    def _calculate_well_depth(self, board):
+        """Calcula profundidad del well en columna 9."""
+        well_col = self.well_column
+        depth = 0
+        for row in range(self.rows - 1, -1, -1):
+            if board[row, well_col] == 0:
+                depth += 1
+            else:
+                break
+        return depth
+
+    def _calculate_flatness(self, board):
+        """Calcula qué planas están las 9 columnas (excluyendo well)."""
+        heights = np.zeros(self.cols, dtype=int)
+        for col in range(self.cols):
+            for row in range(self.rows):
+                if board[row, col] == 1:
+                    heights[col] = self.rows - row
+                    break
+        
+        other_heights = np.delete(heights, self.well_column)
+        if len(other_heights) == 0:
+            return 0.0
+        
+        mean_h = np.mean(other_heights)
+        variance = np.mean((other_heights - mean_h) ** 2)
+        
+        if variance < 1.0:
+            return 1.0
+        elif variance < 4.0:
+            return 0.5
+        return 0.0
+
+    def _has_i_piece_ready(self, held_piece, incoming_queue):
+        """Verifica si tenemos pieza I disponible pronto."""
+        if held_piece == "I":
+            return True
+        if incoming_queue and incoming_queue[0] == "I":
+            return True
+        return False
+
+    def _count_covered_in_well(self, board):
+        """Cuenta celdas bloqueadas sobre el well."""
+        well_col = self.well_column
+        covered = 0
+        found_block = False
+        for row in range(self.rows):
+            if board[row, well_col] == 1:
+                found_block = True
+            elif found_block:
+                covered += 1
+        return covered
+
+    def _is_early_game(self, board):
+        """Detecta si estamos en early game (< 20 bloques)."""
+        return np.sum(board) < 20
+
+    def _get_column_heights(self, board):
+        """Altura de cada columna."""
+        heights = np.zeros(self.cols, dtype=int)
+        for col in range(self.cols):
+            for row in range(self.rows):
+                if board[row, col] == 1:
+                    heights[col] = self.rows - row
+                    break
+        return heights
+
+    def _count_low_holes(self, board):
+        """Cuenta huecos en las primeras 5 filas desde abajo."""
+        holes = 0
+        for row in range(self.rows - 1, self.rows - 6, -1):
+            for col in range(self.cols - 1):
+                if board[row, col] == 0:
+                    if np.any(board[:row, col] == 1):
+                        holes += 1
+        return holes
+
+    def _count_first_row_holes(self, board):
+        """Cuenta huecos en la fila más baja (primera línea de juego)."""
+        holes = 0
+        bottom_row = self.rows - 1
+        for col in range(self.cols - 1):
+            if board[bottom_row, col] == 0 and np.any(board[:bottom_row, col] == 1):
+                holes += 1
+        return holes
 
     # INFO: Metodos para alcanzar el mejor movimiento sin el hold.
 
@@ -267,12 +434,14 @@ class Agent:
             if move.actions and move.actions[0] == "hold" and current_held_piece == "":
                 queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
+            # Cambio: Pasar incoming_queue a _dfs_search
             score = self._dfs_search(
                 board=move.board,
                 incoming_queue=queue_for_future,
                 depth=max_depth - 1,
                 accumulated_lines=move.cleared_lines,
                 current_held_piece=move.held_piece,
+                original_queue=incoming_queue,  # Nuevo
             )
 
             if score > best_score:
@@ -282,11 +451,13 @@ class Agent:
 
         return best_move
 
+    # Cambio: Firma modificada para recibir original_queue
     def _dfs_search(
-        self, board, incoming_queue, depth, accumulated_lines, current_held_piece
+        self, board, incoming_queue, depth, accumulated_lines, current_held_piece, original_queue=None
     ) -> float:
         if depth == 0 or not incoming_queue:
-            return self.evaluate_move(board, accumulated_lines, current_held_piece)
+            # Cambio: Pasar cola para evaluar I piece
+            return self.evaluate_move(board, accumulated_lines, current_held_piece, original_queue)
 
         current_piece = incoming_queue[0]
 
@@ -306,12 +477,14 @@ class Agent:
             if move.actions and move.actions[0] == "hold" and current_held_piece == "":
                 queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
+            # Cambio: Pasar original_queue recursivamente
             score = self._dfs_search(
                 board=move.board,
                 incoming_queue=queue_for_future,
                 depth=depth - 1,
                 accumulated_lines=total_lines,
                 current_held_piece=move.held_piece,
+                original_queue=original_queue,
             )
 
             if score > best_score_in_branch:
@@ -429,21 +602,28 @@ class Agent:
     def __setstate__(self, estado):
         self.__dict__.update(estado)
 
+    # Cambio: Firma modificada para recibir original_queue
     def _evaluate_single_branch(
-        self, move, incoming_queue, max_depth, initial_held_piece
+        self, move, incoming_queue, max_depth, initial_held_piece, original_queue=None
     ):
         queue_for_future = incoming_queue[1:]
 
         if move.actions and move.actions[0] == "hold" and initial_held_piece == "":
             queue_for_future = incoming_queue[2:] if len(incoming_queue) > 1 else []
 
-        score = self._dfs_search(
-            board=move.board,
-            incoming_queue=queue_for_future,
-            depth=max_depth - 1,
-            accumulated_lines=move.cleared_lines,
-            current_held_piece=move.held_piece,
-        )
+        # Fix: Asegurar que score siempre se asigne
+        try:
+            score = self._dfs_search(
+                board=move.board,
+                incoming_queue=queue_for_future,
+                depth=max_depth - 1,
+                accumulated_lines=move.cleared_lines,
+                current_held_piece=move.held_piece,
+                original_queue=original_queue,  # Nuevo
+            )
+        except Exception:
+            score = float("-inf")  # Fix: Si falla, peor score posible
+        
         move.score = score
         return move
 
@@ -463,12 +643,14 @@ class Agent:
         with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = []
             for move in possible_moves:
+                # Cambio: Pasar incoming_queue como original_queue
                 future = executor.submit(
                     self._evaluate_single_branch,
                     move,
                     incoming_queue,
                     max_depth,
                     current_held_piece,
+                    incoming_queue,  # Nuevo
                 )
                 futures.append(future)
 
