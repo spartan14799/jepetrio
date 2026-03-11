@@ -10,4 +10,5 @@ Include/
 
 prueba.py
 .venv/
-**/__pychache__/
+**/__pycache__/
+__pycache__
