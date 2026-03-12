@@ -241,11 +241,13 @@ class Agent:
         if is_tetris == 1:
             score += 10000.0  # Cambio: Era 1000.0
         
-        # Nuevo: Bonus por tener I lista con well profundo
-        if has_i_ready and well_depth >= 3:
-            score += 8000.0 * well_depth  
-        elif has_i_ready:
-            score += 1000.0
+        # Nuevo: Bonus inteligente por I en hold (solo si tiene sentido)
+        if held_piece == "I":
+            if well_depth >= 2:  # Well ya tiene forma
+                score += 500.0 * well_depth  
+            elif flatness > 0.5:  
+                score += 200.0  
+            
         
         # Nuevo: Penalizar si cubrimos el well
         score += self.weights["holes"] * covered_well * 3
@@ -274,6 +276,23 @@ class Agent:
             first_row_holes = self._count_first_row_holes(board)
             if first_row_holes > 0:
                 score -= 2000.0 * first_row_holes
+        # Nuevo: INSTINTO DE SUPERVIVENCIA
+        if self._is_in_danger(board):
+            # En peligro: cualquier línea limpiada es buena
+            if cleared_lines > 0:
+                score += 5000.0 * cleared_lines  # Bonus masivo por limpiar
+            else:
+                score -= 3000.0  # Penalizar no limpiar
+            
+            # Preferir movimientos que bajen la altura máxima
+            new_max_height = max(self._get_column_heights(board))
+            score -= new_max_height * 100.0  # Penalizar altura directamente
+        
+        # Nuevo: Reducir bonus de Tetris si estamos en peligro
+        if is_tetris == 1 and self._is_in_danger(board):
+            score += 5000.0  # Menos que el normal 10000, pero sigue siendo bueno
+        elif is_tetris == 1:
+            score += 10000.0
 
         return score
 
@@ -413,6 +432,22 @@ class Agent:
             if board[bottom_row, col] == 0 and np.any(board[:bottom_row, col] == 1):
                 holes += 1
         return holes
+    # Nuevo método después de _count_first_row_holes
+    def _is_in_danger(self, board):
+        """Detecta si estamos en peligro de morir (altura crítica)."""
+        heights = self._get_column_heights(board)
+        max_height = max(heights)
+        # Peligro: cualquier columna llegando a fila 3 o menos desde arriba
+        return max_height >= 17  # 17 = fila 3 desde arriba en tablero de 20
+
+    def _count_garbage_rows(self, board):
+        """Cuenta filas 'basura' (incompletas que dificultan juego)."""
+        garbage = 0
+        for row in range(self.rows):
+           filled = np.sum(board[row, :self.cols-1])  # Sin well
+           if 1 <= filled <= 8:  # Ni vacía ni llena
+               garbage += 1
+        return garbage
 
     # INFO: Metodos para alcanzar el mejor movimiento sin el hold.
 
