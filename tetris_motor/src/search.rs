@@ -18,10 +18,21 @@ pub fn evaluate_board(board: &Vec<Vec<i32>>, cleared_lines: i32, held_piece: &st
     let w_holes = -25.0;
     let w_bumpiness = -2.0;
     let w_height = -25.0;
+    let w_incomplete_clear = -5.0;
+    let w_tetris = 15.0;
+
+    let is_tetris = if cleared_lines >= 4 { 1.0 } else { 0.0 };
+    let incomplete_clear = if cleared_lines > 0 && cleared_lines < 4 {
+        cleared_lines as f64
+    } else {
+        0.0
+    };
 
     let mut score = (metrics.holes as f64 * w_holes)
         + (metrics.bumpiness as f64 * w_bumpiness)
-        + (metrics.aggregate_height as f64 * w_height);
+        + (metrics.aggregate_height as f64 * w_height)
+        + (incomplete_clear * w_incomplete_clear)
+        + (is_tetris * w_tetris);
 
     if cleared_lines >= 4 {
         score += 1000.0;
