@@ -82,19 +82,20 @@ class Agent:
         self.current_board = np.zeros((20, 10), dtype=int)
         self.hold = ""
         self.current_playing_piece = None
-        # Cambio: Pesos modificados para priorizar Tetris y evitar huecos en early game
+        self.tetris_count = 0  # Contador de Tetris realizados
+        pyautogui.PAUSE = 0    # Velocidad máxima de input
         self.weights = (
             weights
             if weights
             else {
-                "holes": -40.0,           
-                "bumpiness": -3.0,        
+                "holes": -60.0,           
+                "bumpiness": -4.0,        
                 "aggregate_height": -15.0, 
-                "block_in_well": -0.1,    
-                "incomplete_clear": -20, 
-                "tetris": 100.0,          
-                "well_depth": 15.0,       # Nuevo: Bonus por profundidad del well
-                "flat_top": 20.0,         # Nuevo: Bonus por top plano en 9 columnas
+                "block_in_well": -2.0,    
+                "incomplete_clear": -80,   # Penalizar fuertemente limpiezas que no son Tetris
+                "tetris": 300.0,          
+                "well_depth": 40.0,        # Priorizar construcción del pozo
+                "flat_top": 30.0,         
             }
         )
 
@@ -259,9 +260,9 @@ class Agent:
             if bottom_holes_count > 0 and cleared_lines >= 1:
                 score += 1000.0 * cleared_lines
             else:
-                score -= 500.0 * (4 - cleared_lines)
-                if well_depth >= 2:
-                    score -= 1000.0
+                score -= 2000.0 * (4 - cleared_lines) # Penalización mucho mayor
+                if well_depth >= 3:
+                    score -= 5000.0
         
         # Nuevo: Penalizar quedarse bajo sin hacer Tetris
         if aggregate_height < 10 and is_tetris == 0:
@@ -711,8 +712,9 @@ class Agent:
         all_moves = []
 
         # Nuevo: Solo generar normales si no tenemos I en hold con well listo
+        # Forzar uso de I solo si el pozo está listo (4+ de profundidad)
         well_depth = self._calculate_well_depth(current_board)
-        if not (current_held_piece == "I" and well_depth >= 3):
+        if not (current_held_piece == "I" and well_depth >= 4):
             normal_moves = self._generate_all_moves(current_board, current_piece)
             for move in normal_moves:
                 move.held_piece = current_held_piece
@@ -738,10 +740,15 @@ class Agent:
     def play(self, incoming_queue) -> str:
         if self.current_playing_piece is not None:
             incoming_queue.insert(0, self.current_playing_piece)
-            self.current_playing_piece = None  # Nuevo: Resetear después de insertar
+            self.current_playing_piece = None
+        
+        # Ajustar profundidad según velocidad: profundidad 2 para mejores decisiones si hay tiempo
+        # Profundidad 1 si ya vamos muy rápido para no acumular lag
+        target_depth = 2 if self.tetris_count < 6 else 1
+
         best_move = self.compute(
             incoming_queue,
-            max_depth=1,
+            max_depth=target_depth,
             current_held_piece=self.hold,
         )
 
@@ -749,10 +756,12 @@ class Agent:
             self.queue_outputs.put("^")
             return "^"
 
+        if best_move.cleared_lines >= 4:
+            self.tetris_count += 1
+
         for key in best_move.actions:
             self.queue_outputs.put(key)
 
-        
         if self.hold == "" and "hold" in best_move.actions:
             self.current_playing_piece = incoming_queue[2] if len(incoming_queue) > 2 else None
         else:
@@ -761,9 +770,13 @@ class Agent:
         self.current_board = best_move.board
         self.hold = best_move.held_piece
 
-        while not self.queue_outputs.empty():
-            sleep(0.2)
+        # Reducir tiempos de espera drásticamente después de 5 Tetris
+        wait_queue = 0.01 if self.tetris_count >= 5 else 0.05
+        wait_turn = 0.02 if self.tetris_count >= 5 else 0.1
 
-        sleep(0.1)
+        while not self.queue_outputs.empty():
+            sleep(wait_queue)
+
+        sleep(wait_turn)
 
         return "*"
