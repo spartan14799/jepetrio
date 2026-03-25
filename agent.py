@@ -167,6 +167,7 @@ class Agent:
             if comand in keys:
                 key = keys[comand]
                 pyautogui.press(key)
+                # time = random.randrange(20,170)/100
                 # pyautogui.keyDown(key)
                 # sleep(0.1)
                 # pyautogui.keyUp(key)
@@ -240,7 +241,7 @@ class Agent:
         
         # Cambio: Bonus masivo por Tetris
         if is_tetris == 1:
-            score += 10000.0  # Cambio: Era 1000.0
+            score += 8000.0  # Cambio: Era 1000.0
         
         # Nuevo: Bonus inteligente por I en hold (solo si tiene sentido)
         if held_piece == "I":

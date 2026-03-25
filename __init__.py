@@ -2,7 +2,7 @@ import agent
 import environment
 import keyboard
 from numpy import typing, uint8
-from time import sleep
+from time import sleep, time
 
 agent_started = False
 game_started = False
@@ -25,7 +25,6 @@ if __name__ == "__main__":
         sleep(0.1)
 
     r: typing.NDArray[uint8] | None = None
-
     while not game_started:
         r: typing.NDArray[uint8] | None = e.response("*")
         if r is not None and e.game_countdown(r):
@@ -37,7 +36,17 @@ if __name__ == "__main__":
     sleep(2)
     v = a.play(first_queue)
 
+    game_start_time = time()
+    screenshot_taken = False
+
     while not game_finished:
+        current_time = time()
+        if not screenshot_taken and (current_time - game_start_time >= 119):
+            e.screenshot_img()
+            print("Puntuación final capturada")
+            screenshot_taken = True
+            game_finished = True
+
         r = e.response("*")
         incoming_queue = a.percept(r)
         if incoming_queue:

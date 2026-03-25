@@ -1,11 +1,14 @@
 import numpy as np
-import cv2 as cv
 from pyautogui import screenshot
 
 
 class Environment:
     START_COORDS = (520, 975)
     START_COLOR = np.array([255, 198, 0])
+
+    def screenshot_img(self):
+        screenshot("game_end_capture.png")
+
     def screenshot_arr(self) -> np.typing.NDArray:
         return np.array(screenshot())
 
